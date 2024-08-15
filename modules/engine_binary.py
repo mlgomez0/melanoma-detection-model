@@ -3,11 +3,6 @@ import torchmetrics
 from tqdm.auto import tqdm
 from typing import Dict, List, Tuple
 
-import torch
-import torchmetrics
-from tqdm.auto import tqdm
-from typing import Dict, List, Tuple
-
 def train_step(model: torch.nn.Module, 
                dataloader: torch.utils.data.DataLoader, 
                loss_fn: torch.nn.Module, 
@@ -61,14 +56,14 @@ def test_step(model: torch.nn.Module,
 
     with torch.inference_mode():
         for batch, (X, y) in enumerate(dataloader):
-            X, y = X.to(device), y.to(device).float()  # Convert targets to float
+            X, y = X.to(device), y.to(device).float() 
 
             test_pred_logits = model(X)
 
-            loss = loss_fn(test_pred_logits, y.unsqueeze(1))  # Adjust target shape to match prediction shape
+            loss = loss_fn(test_pred_logits, y.unsqueeze(1))
             test_loss += loss.item()
 
-            test_pred_labels = torch.round(test_pred_logits)  # For binary classification, round the sigmoid output to get the class
+            test_pred_labels = torch.round(test_pred_logits)
             test_acc += (test_pred_labels == y.unsqueeze(1)).sum().item() / len(test_pred_labels)
             
             # Calculate recall and F1
@@ -90,8 +85,9 @@ def train(model: torch.nn.Module,
           epochs: int,
           device: torch.device,
           writer:torch.utils.tensorboard.writer.SummaryWriter=None,
-          example_input=None) -> Dict[str, List]:
-    """Trains and tests a PyTorch model, including loss, accuracy, recall, and F1-score."""
+          example_input=None,
+          patience: int = 5) -> Dict[str, List]:
+    """Trains and tests a PyTorch model, including loss, accuracy, recall, and F1-score, with early stopping."""
 
     results = {"train_loss": [],
                "train_acc": [],
@@ -102,6 +98,9 @@ def train(model: torch.nn.Module,
                "test_recall": [],
                "test_f1": []
     }
+
+    best_loss = float('inf')
+    patience_counter = 0
 
     for epoch in tqdm(range(epochs)):
         train_loss, train_acc, train_recall, train_f1 = train_step(model=model,
@@ -134,6 +133,17 @@ def train(model: torch.nn.Module,
         results["test_acc"].append(test_acc)
         results["test_recall"].append(test_recall)
         results["test_f1"].append(test_f1)
+
+        # Early stopping logic
+        if test_loss < best_loss:
+            best_loss = test_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        if patience_counter >= patience:
+            print(f"Early stopping triggered after {epoch + 1} epochs.")
+            break
 
         if writer and example_input is not None:
             writer.add_scalars(main_tag="Loss",
