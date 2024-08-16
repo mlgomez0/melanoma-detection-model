@@ -1,6 +1,6 @@
 import torch
-import torchmetrics
 from tqdm.auto import tqdm
+from sklearn.metrics import recall_score, f1_score
 from typing import Dict, List, Tuple
 
 def train_step(model: torch.nn.Module, 
@@ -14,8 +14,9 @@ def train_step(model: torch.nn.Module,
 
     # Initialize metrics
     train_loss, train_acc, train_recall, train_f1 = 0, 0, 0, 0
-    recall = torchmetrics.Recall(task="binary").to(device)
-    f1 = torchmetrics.F1Score(task="binary").to(device)
+
+    all_preds = []
+    all_targets = []
 
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device).float()  # Convert targets to float
@@ -31,15 +32,17 @@ def train_step(model: torch.nn.Module,
 
         y_pred_class = torch.round(y_pred)  # For binary classification, round the sigmoid output to get the class
         train_acc += (y_pred_class == y.unsqueeze(1)).sum().item() / len(y_pred)
-        
-        # Calculate recall and F1
-        train_recall += recall(y_pred_class, y.unsqueeze(1)).item()
-        train_f1 += f1(y_pred_class, y.unsqueeze(1)).item()
+
+        # Collect predictions and targets for sklearn metrics
+        all_preds.extend(y_pred_class.cpu().detach().numpy())
+        all_targets.extend(y.cpu().detach().numpy())
+
+    # Calculate recall and F1 using sklearn
+    train_recall = recall_score(all_targets, all_preds, average='weighted')
+    train_f1 = f1_score(all_targets, all_preds, average='weighted')
 
     train_loss /= len(dataloader)
     train_acc /= len(dataloader)
-    train_recall /= len(dataloader)
-    train_f1 /= len(dataloader)
     
     return train_loss, train_acc, train_recall, train_f1
 
@@ -51,8 +54,9 @@ def test_step(model: torch.nn.Module,
 
     model.eval() 
     test_loss, test_acc, test_recall, test_f1 = 0, 0, 0, 0
-    recall = torchmetrics.Recall(task="binary").to(device)
-    f1 = torchmetrics.F1Score(task="binary").to(device)
+
+    all_preds = []
+    all_targets = []
 
     with torch.inference_mode():
         for batch, (X, y) in enumerate(dataloader):
@@ -65,15 +69,17 @@ def test_step(model: torch.nn.Module,
 
             test_pred_labels = torch.round(test_pred_logits)
             test_acc += (test_pred_labels == y.unsqueeze(1)).sum().item() / len(test_pred_labels)
-            
-            # Calculate recall and F1
-            test_recall += recall(test_pred_labels, y.unsqueeze(1)).item()
-            test_f1 += f1(test_pred_labels, y.unsqueeze(1)).item()
+
+            # Collect predictions and targets for sklearn metrics
+            all_preds.extend(test_pred_labels.cpu().detach().numpy())
+            all_targets.extend(y.cpu().detach().numpy())
+
+    # Calculate recall and F1 using sklearn
+    test_recall = recall_score(all_targets, all_preds, average='weighted')
+    test_f1 = f1_score(all_targets, all_preds, average='weighted')
 
     test_loss /= len(dataloader)
     test_acc /= len(dataloader)
-    test_recall /= len(dataloader)
-    test_f1 /= len(dataloader)
     
     return test_loss, test_acc, test_recall, test_f1
 
